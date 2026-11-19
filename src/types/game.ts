@@ -5,6 +5,16 @@ export interface Vector2D {
 
 export type VehicleKind = 'bodaboda' | 'bajaji' | 'daladala';
 
+export type CharacterRole =
+  | 'Software Engineer'
+  | 'Bodaboda Rider'
+  | 'Bajaji Captain'
+  | 'KCMC Medic'
+  | 'Kilimanjaro Trader'
+  | 'University Student';
+
+export type HeadgearStyle = 'none' | 'helmet' | 'cap' | 'beanie';
+
 export interface ZoneRow {
   id: string;
   title: string;
@@ -21,7 +31,14 @@ export interface BuildingRow {
   zone_id: string;
   name: string;
   label: string | null;
-  category: 'hospital' | 'pharmacy' | 'shop' | 'food' | 'hostel' | 'community' | 'residential';
+  category:
+    | 'hospital'
+    | 'pharmacy'
+    | 'shop'
+    | 'food'
+    | 'hostel'
+    | 'community'
+    | 'residential';
   x: number;
   y: number;
   width: number;
@@ -94,23 +111,49 @@ export interface MissionRow {
   recommended_vehicle: VehicleKind | null;
 }
 
-export interface NpcRow {
+export interface UserCharacterRow {
   id: string;
-  name: string;
-  role: string;
-  shirt_color: string;
+  player_id: string;
+  username: string;
+  display_name: string;
+  role: CharacterRole;
+  skin_tone: string;
+  jacket_color: string;
+  accent_color: string;
+  headgear: HeadgearStyle;
+  bio: string;
   x: number;
   y: number;
+  angle: number;
   speed: number;
+  in_vehicle_id: string | null;
+  is_online: number;
+  reputation: number;
   waypoints_json: string;
-  dialogue_sw: string;
-  angle?: number;
+  updated_at: string;
   currentWaypoint?: number;
+  walkCycle?: number;
+}
+
+export interface GenerateCharacterInput {
+  username: string;
+  displayName: string;
+  role: CharacterRole;
+  skinTone: string;
+  jacketColor: string;
+  accentColor: string;
+  headgear: HeadgearStyle;
+  bio?: string;
 }
 
 export interface SyncQueueRow {
   event_id: string;
-  event_type: 'player_move' | 'vehicle_move' | 'mission_complete' | 'shop_purchase';
+  event_type:
+    | 'player_move'
+    | 'vehicle_move'
+    | 'mission_complete'
+    | 'shop_purchase'
+    | 'character_update';
   payload_json: string;
   timestamp: string;
   synced: number;
@@ -119,6 +162,12 @@ export interface SyncQueueRow {
 export interface PlayerState {
   id: string;
   username: string;
+  displayName: string;
+  role: CharacterRole;
+  skinTone: string;
+  jacketColor: string;
+  accentColor: string;
+  headgear: HeadgearStyle;
   x: number;
   y: number;
   vx: number;
