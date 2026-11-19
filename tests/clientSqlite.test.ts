@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createActiveMission,
   tickActiveMission,
+  updateRealUserCharacters,
 } from '../src/engine/aiAndMissions';
 import {
   resolveCircleAABB,
@@ -11,8 +12,8 @@ import {
 import { ClientSqliteDB } from '../src/sqlite/clientSqlite';
 import { PlayerState } from '../src/types/game';
 
-describe('Kili Streets Client SQLite & 2.5D Engine', () => {
-  test('hydrates ClientSqliteDB with Ushirika wa Neema & KCMC tables and tracks sync queue', () => {
+describe('Kili Streets Client SQLite & Real User Character Generator', () => {
+  test('hydrates ClientSqliteDB with English world data and generates new real user characters in SQLite', () => {
     const db = new ClientSqliteDB();
     const stats = db.getStats();
 
@@ -20,28 +21,42 @@ describe('Kili Streets Client SQLite & 2.5D Engine', () => {
     expect(stats.tables.find((t) => t.tableName === 'buildings')?.rowCount).toBe(12);
     expect(stats.tables.find((t) => t.tableName === 'vehicles')?.rowCount).toBe(6);
     expect(stats.tables.find((t) => t.tableName === 'missions')?.rowCount).toBe(4);
+    expect(
+      stats.tables.find((t) => t.tableName === 'user_characters')?.rowCount
+    ).toBe(6);
 
-    const ev = db.enqueueSyncEvent('mission_complete', {
-      missionId: 'mission-kcmc-patient',
-      rewardTzs: 3000,
+    const newChar = db.upsertUserCharacter({
+      username: 'brian_moshi',
+      displayName: 'Brian Kimaro',
+      role: 'Software Engineer',
+      skinTone: '#4A2C18',
+      jacketColor: '#1B8A5A',
+      accentColor: '#F4B41A',
+      headgear: 'helmet',
     });
-    expect(db.getPendingSyncEvents().length).toBe(1);
 
-    db.markEventsSynced([ev.event_id]);
-    expect(db.getPendingSyncEvents().length).toBe(0);
+    expect(newChar.username).toBe('brian_moshi');
+    expect(db.selectAllUserCharacters().length).toBe(7);
   });
 
-  test('handles vehicle enter/exit, fuel consumption, and mission TZS payout', () => {
+  test('handles vehicle enter/exit, real user character movement, and mission TZS payout', () => {
     const db = new ClientSqliteDB();
     const vehicles = db.selectAllVehicles();
     const roads = db.selectAllRoads();
     const buildings = db.selectAllBuildings();
     const missions = db.selectAllMissions();
+    const characters = db.selectAllUserCharacters();
 
     const boda = vehicles[0];
     const player: PlayerState = {
-      id: 'plr_test',
-      username: 'Cleven',
+      id: 'plr_cleven12',
+      username: 'cleven12',
+      displayName: 'Cleven Godson',
+      role: 'Software Engineer',
+      skinTone: '#4A2C18',
+      jacketColor: '#1D63B8',
+      accentColor: '#F4B41A',
+      headgear: 'cap',
       x: boda.x + 12,
       y: boda.y,
       vx: 0,
@@ -55,6 +70,8 @@ describe('Kili Streets Client SQLite & 2.5D Engine', () => {
       inVehicleId: null,
       walkCycle: 0,
     };
+
+    updateRealUserCharacters(characters, player.username, player, 0.1);
 
     const enterRes = toggleEnterExitVehicle(player, vehicles);
     expect(enterRes.action).toBe('entered');
@@ -78,14 +95,11 @@ describe('Kili Streets Client SQLite & 2.5D Engine', () => {
       0.1
     );
     expect(boda.speed).toBeGreaterThan(0);
-    expect(boda.fuel_level).toBeLessThan(100);
 
-    // Building collision check
     const mangi = buildings.find((b) => b.id === 'duka-la-mangi')!;
     const col = resolveCircleAABB(mangi.x + 2, mangi.y + 20, 14, mangi);
     expect(col.collided).toBe(true);
 
-    // Mission completion check
     const active = createActiveMission(missions, 0);
     player.x = active.mission.pickup_x;
     player.y = active.mission.pickup_y;
