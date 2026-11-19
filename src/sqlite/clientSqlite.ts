@@ -1,17 +1,18 @@
 import {
   BuildingRow,
+  GenerateCharacterInput,
   MissionRow,
-  NpcRow,
   RoadRow,
   SqliteStats,
   SyncQueueRow,
   TreeRow,
+  UserCharacterRow,
   VehicleRow,
   ZoneRow,
 } from '../types/game';
 import { DEFAULT_WORLD_SEED } from './defaultSeed';
 
-const STORAGE_KEY = 'kili_streets_client_sqlite_wal_v1';
+const STORAGE_KEY = 'kili_streets_client_sqlite_wal_v2';
 
 interface RelationalTables {
   zones: Map<string, ZoneRow>;
@@ -20,16 +21,15 @@ interface RelationalTables {
   trees: Map<string, TreeRow>;
   vehicles: Map<string, VehicleRow>;
   missions: Map<string, MissionRow>;
-  npcs: Map<string, NpcRow>;
+  user_characters: Map<string, UserCharacterRow>;
   sync_queue: Map<string, SyncQueueRow>;
   meta: Map<string, string>;
 }
 
 /**
  * High-Performance Client-Side SQLite Relational Storage & WAL Engine.
- * Provides sub-0.05ms indexed table queries during the 60 FPS game loop,
- * persists WAL snapshots to browser storage, and queues delta mutations
- * for synchronization with `kili-streets-backend` (`bun:sqlite`).
+ * Stores all world tables and Real User Characters locally for sub-0.05ms 60 FPS reads,
+ * persists local WAL snapshots, and synchronizes with `kili-streets-backend`.
  */
 export class ClientSqliteDB {
   private tables: RelationalTables = {
@@ -39,7 +39,7 @@ export class ClientSqliteDB {
     trees: new Map(),
     vehicles: new Map(),
     missions: new Map(),
-    npcs: new Map(),
+    user_characters: new Map(),
     sync_queue: new Map(),
     meta: new Map(),
   };
@@ -63,7 +63,7 @@ export class ClientSqliteDB {
     trees: TreeRow[];
     vehicles: VehicleRow[];
     missions: MissionRow[];
-    npcs: NpcRow[];
+    characters?: UserCharacterRow[];
   }): void {
     this.tables.zones.clear();
     for (const z of payload.zones) this.tables.zones.set(z.id, { ...z });
@@ -91,12 +91,13 @@ export class ClientSqliteDB {
     this.tables.missions.clear();
     for (const m of payload.missions) this.tables.missions.set(m.id, { ...m });
 
-    this.tables.npcs.clear();
-    for (const n of payload.npcs) {
-      this.tables.npcs.set(n.id, {
-        ...n,
-        angle: 0,
+    const charList = payload.characters || DEFAULT_WORLD_SEED.characters;
+    this.tables.user_characters.clear();
+    for (const c of charList) {
+      this.tables.user_characters.set(c.username, {
+        ...c,
         currentWaypoint: 1,
+        walkCycle: 0,
       });
     }
   }
@@ -125,8 +126,71 @@ export class ClientSqliteDB {
     return Array.from(this.tables.missions.values());
   }
 
-  public selectAllNpcs(): NpcRow[] {
-    return Array.from(this.tables.npcs.values());
+  public selectAllUserCharacters(): UserCharacterRow[] {
+    return Array.from(this.tables.user_characters.values());
+  }
+
+  public upsertUserCharacter(
+    input: GenerateCharacterInput,
+    x = 1125,
+    y = 1580
+  ): UserCharacterRow {
+    const cleanUsername =
+      input.username
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_') || `user_${Date.now().toString(36)}`;
+    const existing = this.tables.user_characters.get(cleanUsername);
+
+    const row: UserCharacterRow = {
+      id: existing ? existing.id : `char_${cleanUsername}`,
+      player_id: existing ? existing.player_id : `plr_${cleanUsername}`,
+      username: cleanUsername,
+      display_name: input.displayName.trim() || cleanUsername,
+      role: input.role,
+      skin_tone: input.skinTone,
+      jacket_color: input.jacketColor,
+      accent_color: input.accentColor,
+      headgear: input.headgear,
+      bio:
+        input.bio ||
+        `${input.role} living in Ushirika wa Neema near KCMC, Kilimanjaro.`,
+      x: existing ? existing.x : x,
+      y: existing ? existing.y : y,
+      angle: existing ? existing.angle : -Math.PI / 2,
+      speed: 54,
+      in_vehicle_id: existing ? existing.in_vehicle_id : null,
+      is_online: 1,
+      reputation: existing ? existing.reputation : 25,
+      waypoints_json: existing
+        ? existing.waypoints_json
+        : JSON.stringify([
+            { x, y },
+            { x: 1125, y: 1160 },
+            { x: 1200, y: 380 },
+          ]),
+      updated_at: new Date().toISOString(),
+      currentWaypoint: 1,
+      walkCycle: 0,
+    };
+
+    this.tables.user_characters.set(cleanUsername, row);
+    this.checkpointWal();
+    return row;
+  }
+
+  public replaceUserCharacters(characters: UserCharacterRow[]): void {
+    for (const c of characters) {
+      const existing = this.tables.user_characters.get(c.username);
+      this.tables.user_characters.set(c.username, {
+        ...c,
+        x: existing ? existing.x : c.x,
+        y: existing ? existing.y : c.y,
+        currentWaypoint: existing?.currentWaypoint ?? 1,
+        walkCycle: existing?.walkCycle ?? 0,
+      });
+    }
+    this.checkpointWal();
   }
 
   public enqueueSyncEvent(
@@ -181,7 +245,10 @@ export class ClientSqliteDB {
         { tableName: 'trees', rowCount: this.tables.trees.size },
         { tableName: 'vehicles', rowCount: this.tables.vehicles.size },
         { tableName: 'missions', rowCount: this.tables.missions.size },
-        { tableName: 'npcs', rowCount: this.tables.npcs.size },
+        {
+          tableName: 'user_characters',
+          rowCount: this.tables.user_characters.size,
+        },
         { tableName: 'sync_queue', rowCount: this.tables.sync_queue.size },
       ],
       pendingSyncEvents: this.getPendingSyncEvents().length,
@@ -195,11 +262,12 @@ export class ClientSqliteDB {
     try {
       const snapshot = {
         meta: Array.from(this.tables.meta.entries()),
+        user_characters: Array.from(this.tables.user_characters.values()),
         sync_queue: Array.from(this.tables.sync_queue.values()).slice(-40),
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     } catch {
-      // Ignore storage quota errors in private browsing
+      // Ignore storage quota errors
     }
   }
 
@@ -210,11 +278,17 @@ export class ClientSqliteDB {
       if (!raw) return;
       const parsed = JSON.parse(raw) as {
         meta?: Array<[string, string]>;
+        user_characters?: UserCharacterRow[];
         sync_queue?: SyncQueueRow[];
       };
       if (parsed.meta) {
         for (const [k, v] of parsed.meta) {
           this.tables.meta.set(k, v);
+        }
+      }
+      if (parsed.user_characters) {
+        for (const c of parsed.user_characters) {
+          this.tables.user_characters.set(c.username, c);
         }
       }
       if (parsed.sync_queue) {
