@@ -2,10 +2,11 @@ import {
   ActiveMissionState,
   BuildingRow,
   DustParticle,
-  NpcRow,
+  HeadgearStyle,
   PlayerState,
   RoadRow,
   TreeRow,
+  UserCharacterRow,
   Vector2D,
   VehicleRow,
 } from '../types/game';
@@ -39,7 +40,7 @@ export class WorldRenderer25D {
   public render(
     player: PlayerState,
     vehicles: VehicleRow[],
-    npcs: NpcRow[],
+    characters: UserCharacterRow[],
     roads: RoadRow[],
     buildings: BuildingRow[],
     trees: TreeRow[],
@@ -72,7 +73,6 @@ export class WorldRenderer25D {
     this.cameraY += (targetY - this.cameraY) * Math.min(1, dt * 7.5);
     this.cameraZoom += (desiredZoom - this.cameraZoom) * Math.min(1, dt * 4);
 
-    // Highland Kilimanjaro turf base
     ctx.fillStyle = '#183B23';
     ctx.fillRect(0, 0, viewW, viewH);
 
@@ -86,7 +86,7 @@ export class WorldRenderer25D {
     this.drawKCMCRoundaboutAndHelipad();
     this.drawMissionBeacon(activeTarget, activeMission.stage, timeSec);
     this.drawDust(dustParticles);
-    this.drawNpcs(npcs);
+    this.drawRealUserCharacters(characters, player.username);
     this.drawVehicles(
       vehicles,
       player.inVehicleId,
@@ -96,7 +96,7 @@ export class WorldRenderer25D {
     );
 
     if (!player.inVehicleId) {
-      this.drawPlayerOnFoot(player);
+      this.drawActivePlayerOnFoot(player);
     }
 
     this.drawBuildings25D(buildings);
@@ -114,6 +114,7 @@ export class WorldRenderer25D {
     this.drawCircularCompassRadar(
       player,
       vehicles,
+      characters,
       roads,
       activeTarget,
       activeMission.stage
@@ -125,7 +126,6 @@ export class WorldRenderer25D {
     ctx.fillStyle = '#1E472A';
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-    // Cultivated Chagga shamba plots with terraced rows
     for (let x = 90; x < WORLD_WIDTH; x += 340) {
       for (let y = 580; y < WORLD_HEIGHT; y += 340) {
         ctx.fillStyle = '#1A3F25';
@@ -151,7 +151,6 @@ export class WorldRenderer25D {
 
     for (const r of roads) {
       if (r.surface === 'tarmac') {
-        // Paved KCMC Road with concrete curb & drainage shoulder
         ctx.fillStyle = '#15181C';
         ctx.fillRect(r.x - 7, r.y - 7, r.width + 14, r.height + 14);
         ctx.fillStyle = '#525B66';
@@ -178,13 +177,11 @@ export class WorldRenderer25D {
           ctx.restore();
         }
       } else {
-        // Volcanic red-earth laterite murram road (Ushirika wa Neema)
         ctx.fillStyle = '#5E2B18';
         ctx.fillRect(r.x - 7, r.y - 7, r.width + 14, r.height + 14);
         ctx.fillStyle = '#9D4E31';
         ctx.fillRect(r.x, r.y, r.width, r.height);
 
-        // Dual tire ruts
         ctx.strokeStyle = 'rgba(94, 43, 24, 0.5)';
         ctx.lineWidth = 9;
         ctx.beginPath();
@@ -203,7 +200,6 @@ export class WorldRenderer25D {
       }
     }
 
-    // Zebra pedestrian crossing at KCMC Main Gate
     ctx.fillStyle = 'rgba(240, 244, 248, 0.75)';
     for (let zx = 1132; zx < 1268; zx += 20) {
       ctx.fillRect(zx, 370, 11, 32);
@@ -220,7 +216,6 @@ export class WorldRenderer25D {
     ctx.arc(rx, ry, 88, 0, Math.PI * 2);
     ctx.fill();
 
-    // Red-white island curb
     ctx.strokeStyle = '#E03131';
     ctx.lineWidth = 6;
     ctx.beginPath();
@@ -232,13 +227,11 @@ export class WorldRenderer25D {
     ctx.arc(rx, ry, 32, 0, Math.PI * 2);
     ctx.fill();
 
-    // Monument obelisk in center of KCMC roundabout
     ctx.fillStyle = '#F4B41A';
     ctx.beginPath();
     ctx.arc(rx, ry, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // KCMC Hospital Emergency Helipad (North-West of gate)
     const hx = 605;
     const hy = 120;
     ctx.fillStyle = '#2B313A';
@@ -285,7 +278,11 @@ export class WorldRenderer25D {
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(stage === 'pickup' ? '▼ CHUKUA HAPA' : '▼ SHUSHA HAPA', 0, -48);
+    ctx.fillText(
+      stage === 'pickup' ? '▼ PICK UP HERE' : '▼ DROP OFF HERE',
+      0,
+      -48
+    );
     ctx.restore();
   }
 
@@ -302,73 +299,174 @@ export class WorldRenderer25D {
     }
   }
 
-  private drawNpcs(npcs: NpcRow[]): void {
+  /**
+   * Renders all Real User Characters in the world (with custom skin tone,
+   * jacket, accent stripe, headgear, and online @username + Role tag).
+   */
+  private drawRealUserCharacters(
+    characters: UserCharacterRow[],
+    activeUsername: string
+  ): void {
     const ctx = this.ctx;
-    for (const npc of npcs) {
-      ctx.save();
-      ctx.translate(npc.x, npc.y);
-
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
-      ctx.beginPath();
-      ctx.arc(2, 3, 10, 0, Math.PI * 2);
-      ctx.fill();
+    for (const ch of characters) {
+      if (ch.username === activeUsername) continue;
+      if (ch.in_vehicle_id) continue;
 
       ctx.save();
-      ctx.rotate(npc.angle ?? 0);
-      ctx.fillStyle = npc.shirt_color;
+      ctx.translate(ch.x, ch.y);
+
+      this.drawCharacterSpriteBody(
+        ctx,
+        ch.angle,
+        ch.walkCycle ?? 0,
+        ch.skin_tone,
+        ch.jacket_color,
+        ch.accent_color,
+        ch.headgear,
+        false
+      );
+
+      // Real User Tag Pill: ● @username | Display Name • Role
+      const tagTitle = `@${ch.username} • ${ch.role}`;
+      const boxW = Math.max(96, tagTitle.length * 5.8 + 18);
+      ctx.fillStyle = 'rgba(10, 18, 13, 0.88)';
+      ctx.strokeStyle = 'rgba(46, 204, 113, 0.55)';
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.roundRect(-7, -10, 14, 20, 6);
+      ctx.roundRect(-boxW / 2, -32, boxW, 18, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      // Online green dot
+      ctx.fillStyle = '#2ECC71';
+      ctx.beginPath();
+      ctx.arc(-boxW / 2 + 8, -23, 3, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#5C3A21';
-      ctx.beginPath();
-      ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Floating villager name tag
-      ctx.fillStyle = 'rgba(12, 20, 15, 0.75)';
-      ctx.beginPath();
-      ctx.roundRect(-34, -24, 68, 13, 3);
-      ctx.fill();
-      ctx.fillStyle = '#E2ECE6';
-      ctx.font = 'bold 8.5px sans-serif';
+      ctx.fillStyle = '#F4F7F5';
+      ctx.font = 'bold 8.8px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(npc.name, 0, -15);
+      ctx.fillText(tagTitle, 4, -20);
 
       ctx.restore();
     }
   }
 
-  private drawPlayerOnFoot(player: PlayerState): void {
+  private drawActivePlayerOnFoot(player: PlayerState): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(player.x, player.y);
 
-    ctx.strokeStyle = 'rgba(244, 180, 26, 0.85)';
-    ctx.lineWidth = 2;
+    // Active User Gold Ring
+    ctx.strokeStyle = 'rgba(244, 180, 26, 0.9)';
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.arc(0, 0, player.radius + 4, 0, Math.PI * 2);
+    ctx.arc(0, 0, player.radius + 5, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.rotate(player.angle);
-    const swing = Math.sin(player.walkCycle) * 4.5;
+    this.drawCharacterSpriteBody(
+      ctx,
+      player.angle,
+      player.walkCycle,
+      player.skinTone,
+      player.jacketColor,
+      player.accentColor,
+      player.headgear,
+      true
+    );
+
+    // Active Player Floating Badge
+    const tag = `YOU: @${player.username} (${player.role})`;
+    const boxW = Math.max(115, tag.length * 6 + 18);
+    ctx.fillStyle = 'rgba(12, 20, 15, 0.92)';
+    ctx.strokeStyle = '#F4B41A';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(-boxW / 2, -34, boxW, 19, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#F4B41A';
+    ctx.font = 'bold 9.2px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(tag, 0, -21);
+
+    ctx.restore();
+  }
+
+  public drawCharacterSpriteBody(
+    ctx: CanvasRenderingContext2D,
+    angle: number,
+    walkCycle: number,
+    skinTone: string,
+    jacketColor: string,
+    accentColor: string,
+    headgear: HeadgearStyle,
+    isMainPlayer: boolean
+  ): void {
+    ctx.save();
+
+    // Ground drop shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+    ctx.beginPath();
+    ctx.arc(2, 3, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.rotate(angle);
+
+    // Animated walking feet
+    const swing = Math.sin(walkCycle) * 4.5;
     ctx.fillStyle = '#181D1A';
     ctx.fillRect(swing - 3, -9, 7, 5);
     ctx.fillRect(-swing - 3, 4, 7, 5);
 
-    ctx.fillStyle = '#1D63B8';
+    // Jacket / Shoulders
+    ctx.fillStyle = jacketColor;
     ctx.beginPath();
     ctx.roundRect(-8, -11, 16, 22, 6);
     ctx.fill();
 
-    ctx.fillStyle = '#F4B41A';
+    // Accent chest/collar stripe
+    ctx.fillStyle = accentColor;
     ctx.fillRect(-4, -9, 8, 18);
 
-    ctx.fillStyle = '#4A2C18';
+    // Head with custom skin tone
+    ctx.fillStyle = skinTone;
     ctx.beginPath();
     ctx.arc(1, 0, 7, 0, Math.PI * 2);
     ctx.fill();
+
+    // Headgear rendering
+    if (headgear === 'helmet') {
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.arc(1, 0, 7.6, 0, Math.PI * 2);
+      ctx.fill();
+      // Visor
+      ctx.fillStyle = '#141A1F';
+      ctx.fillRect(4, -5, 4, 10);
+    } else if (headgear === 'cap') {
+      // Cap visor pointing forward
+      ctx.fillStyle = jacketColor;
+      ctx.beginPath();
+      ctx.arc(1, 0, 6.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.roundRect(3, -5, 7, 10, 2);
+      ctx.fill();
+    } else if (headgear === 'beanie') {
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.arc(0, 0, 7.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (isMainPlayer) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
 
     ctx.restore();
   }
@@ -396,20 +494,18 @@ export class WorldRenderer25D {
         ctx.arc(0, 0, Math.max(w, l) * 0.75 * pulse, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Plate & prompt badge above vehicle
         ctx.fillStyle = 'rgba(12, 20, 15, 0.92)';
         ctx.beginPath();
-        ctx.roundRect(-58, -42, 116, 18, 5);
+        ctx.roundRect(-64, -42, 128, 18, 5);
         ctx.fill();
         ctx.fillStyle = '#F4B41A';
         ctx.font = 'bold 9.5px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`[E] ${v.plate_number}`, 0, -30);
+        ctx.fillText(`[E] ENTER ${v.plate_number}`, 0, -30);
       }
 
       ctx.rotate(v.angle);
 
-      // Headlight beam
       const grad = ctx.createLinearGradient(l * 0.4, 0, l * 0.4 + 92, 0);
       grad.addColorStop(0, 'rgba(255, 245, 190, 0.3)');
       grad.addColorStop(1, 'rgba(255, 245, 190, 0)');
@@ -422,7 +518,6 @@ export class WorldRenderer25D {
       ctx.closePath();
       ctx.fill();
 
-      // Brake tail glow when braking
       if (v.id === drivenId && isBraking) {
         ctx.fillStyle = 'rgba(255, 42, 42, 0.65)';
         ctx.beginPath();
@@ -431,7 +526,6 @@ export class WorldRenderer25D {
         ctx.fill();
       }
 
-      // Shadow
       ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
       ctx.beginPath();
       ctx.roundRect(-l / 2 + 4, -w / 2 + 5, l, w, 6);
@@ -509,25 +603,20 @@ export class WorldRenderer25D {
     }
   }
 
-  /**
-   * 2.5D Oblique Extruded Buildings with Front Facade, Windows, Awnings & Roof Overhang
-   */
   private drawBuildings25D(buildings: BuildingRow[]): void {
     const ctx = this.ctx;
 
     for (const b of buildings) {
-      const extrusionH = b.category === 'hospital' || b.category === 'hostel' ? 24 : 16;
+      const extrusionH =
+        b.category === 'hospital' || b.category === 'hostel' ? 24 : 16;
       const roofY = b.y - extrusionH;
 
-      // Ground cast shadow
       ctx.fillStyle = 'rgba(0, 0, 0, 0.44)';
       ctx.fillRect(b.x + 10, b.y + 12, b.width, b.height);
 
-      // South-facing 2.5D vertical facade wall
       ctx.fillStyle = b.wall_color;
       ctx.fillRect(b.x, b.y + b.height - extrusionH, b.width, extrusionH);
 
-      // Facade architectural windows / doors
       ctx.fillStyle =
         b.category === 'food' ? '#F59F00' : 'rgba(28, 45, 62, 0.78)';
       const winStep = 28;
@@ -535,17 +624,14 @@ export class WorldRenderer25D {
         ctx.fillRect(wx, b.y + b.height - extrusionH + 4, 12, extrusionH - 7);
       }
 
-      // Duka la Mangi M-Pesa green/red awning stripe
       if (b.category === 'shop' || b.category === 'pharmacy') {
         ctx.fillStyle = '#1B8A5A';
         ctx.fillRect(b.x, b.y + b.height - extrusionH - 3, b.width, 5);
       }
 
-      // Extruded Roof deck
       ctx.fillStyle = b.roof_color;
       ctx.fillRect(b.x, roofY, b.width, b.height);
 
-      // Metallic corrugated roof seams
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.lineWidth = 1.5;
       for (let rx = b.x + 16; rx < b.x + b.width; rx += 18) {
@@ -555,7 +641,6 @@ export class WorldRenderer25D {
         ctx.stroke();
       }
 
-      // Roof ridge highlight
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.32)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -563,7 +648,6 @@ export class WorldRenderer25D {
       ctx.lineTo(b.x + b.width - 10, roofY + b.height / 2);
       ctx.stroke();
 
-      // Red Cross emblem on KCMC Hospital wings
       if (b.category === 'hospital') {
         const cx = b.x + 28;
         const cy = roofY + 26;
@@ -611,7 +695,6 @@ export class WorldRenderer25D {
       ctx.arc(5, 6, t.radius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Trunk
       ctx.fillStyle = '#4A321F';
       ctx.beginPath();
       ctx.arc(0, 0, t.radius * 0.25, 0, Math.PI * 2);
@@ -697,6 +780,7 @@ export class WorldRenderer25D {
   private drawCircularCompassRadar(
     player: PlayerState,
     vehicles: VehicleRow[],
+    characters: UserCharacterRow[],
     roads: RoadRow[],
     activeTarget: Vector2D,
     stage: 'pickup' | 'dropoff'
@@ -711,7 +795,6 @@ export class WorldRenderer25D {
 
     ctx.save();
 
-    // Circular radar clip
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(12, 20, 15, 0.92)';
@@ -731,6 +814,14 @@ export class WorldRenderer25D {
       );
     }
 
+    // Real user dots on radar (cyan/blue)
+    for (const ch of characters) {
+      ctx.fillStyle = '#38BDF8';
+      ctx.beginPath();
+      ctx.arc(ch.x * scale, ch.y * scale, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     for (const v of vehicles) {
       ctx.fillStyle = v.kind === 'bodaboda' ? '#E03131' : '#F4B41A';
       ctx.fillRect(v.x * scale - 2, v.y * scale - 2, 4, 4);
@@ -748,7 +839,6 @@ export class WorldRenderer25D {
 
     ctx.restore();
 
-    // Radar compass ring
     ctx.strokeStyle = 'rgba(244, 180, 26, 0.75)';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
