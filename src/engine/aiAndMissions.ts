@@ -1,8 +1,8 @@
 import {
   ActiveMissionState,
   MissionRow,
-  NpcRow,
   PlayerState,
+  UserCharacterRow,
   Vector2D,
   VehicleRow,
 } from '../types/game';
@@ -22,28 +22,46 @@ export const AI_USHIRIKA_ROUTE: Vector2D[] = [
   { x: 1200, y: 1205 },
 ];
 
-export function updateNpcs(npcs: NpcRow[], dt: number): void {
-  for (const npc of npcs) {
+/**
+ * Updates all real user characters in the world (except the currently active player,
+ * whose position is driven directly by keyboard/touch controls).
+ */
+export function updateRealUserCharacters(
+  characters: UserCharacterRow[],
+  activeUsername: string,
+  player: PlayerState,
+  dt: number
+): void {
+  for (const ch of characters) {
+    if (ch.username === activeUsername) {
+      ch.x = player.x;
+      ch.y = player.y;
+      ch.angle = player.angle;
+      ch.in_vehicle_id = player.inVehicleId;
+      continue;
+    }
+
     let waypoints: Vector2D[] = [];
     try {
-      waypoints = JSON.parse(npc.waypoints_json);
+      waypoints = JSON.parse(ch.waypoints_json);
     } catch {
       continue;
     }
     if (waypoints.length === 0) continue;
 
-    const wpIndex = (npc.currentWaypoint ?? 0) % waypoints.length;
+    const wpIndex = (ch.currentWaypoint ?? 0) % waypoints.length;
     const target = waypoints[wpIndex];
-    const dx = target.x - npc.x;
-    const dy = target.y - npc.y;
+    const dx = target.x - ch.x;
+    const dy = target.y - ch.y;
     const dist = Math.hypot(dx, dy);
 
     if (dist < 10) {
-      npc.currentWaypoint = (wpIndex + 1) % waypoints.length;
+      ch.currentWaypoint = (wpIndex + 1) % waypoints.length;
     } else {
-      npc.angle = Math.atan2(dy, dx);
-      npc.x += Math.cos(npc.angle) * npc.speed * dt;
-      npc.y += Math.sin(npc.angle) * npc.speed * dt;
+      ch.angle = Math.atan2(dy, dx);
+      ch.x += Math.cos(ch.angle) * ch.speed * dt;
+      ch.y += Math.sin(ch.angle) * ch.speed * dt;
+      ch.walkCycle = (ch.walkCycle ?? 0) + dt * 9;
     }
   }
 }
@@ -66,7 +84,8 @@ export function updateAIVehicles(
     const distToTarget = Math.hypot(dx, dy);
     const distToPlayer = Math.hypot(playerX - v.x, playerY - v.y);
 
-    const desiredSpeed = distToPlayer < 78 ? 22 : v.kind === 'daladala' ? 155 : 125;
+    const desiredSpeed =
+      distToPlayer < 78 ? 22 : v.kind === 'daladala' ? 155 : 125;
     v.speed += (desiredSpeed - v.speed) * Math.min(1, dt * 4);
 
     if (distToTarget < 36) {
