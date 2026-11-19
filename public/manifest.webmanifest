@@ -1,0 +1,10 @@
+{
+  "name": "Kili Streets: Ushirika wa Neema & KCMC",
+  "short_name": "Kili Streets",
+  "description": "2.5D Open-World Action & Transport Game set in Ushirika wa Neema & KCMC, Moshi, Kilimanjaro",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0F1912",
+  "theme_color": "#F4B41A"
+}
