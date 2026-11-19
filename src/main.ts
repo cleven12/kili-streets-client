@@ -2,7 +2,7 @@ import {
   createActiveMission,
   tickActiveMission,
   updateAIVehicles,
-  updateNpcs,
+  updateRealUserCharacters,
 } from './engine/aiAndMissions';
 import { SoundEffects } from './engine/audio';
 import { ControlsManager } from './engine/controls';
@@ -15,7 +15,14 @@ import {
 import { WorldRenderer25D } from './engine/renderer25d';
 import { BackendSyncConnector } from './sqlite/backendSync';
 import { ClientSqliteDB } from './sqlite/clientSqlite';
-import { DustParticle, PlayerState, ZoneRow } from './types/game';
+import {
+  CharacterRole,
+  DustParticle,
+  HeadgearStyle,
+  PlayerState,
+  UserCharacterRow,
+  ZoneRow,
+} from './types/game';
 
 class KiliStreetsClientApp {
   private clientDb: ClientSqliteDB;
@@ -25,8 +32,14 @@ class KiliStreetsClientApp {
   private sfx: SoundEffects;
 
   private player: PlayerState = {
-    id: 'plr_local_kili',
-    username: 'ClevenKili',
+    id: 'plr_cleven12',
+    username: 'cleven12',
+    displayName: 'Cleven Godson',
+    role: 'Software Engineer',
+    skinTone: '#4A2C18',
+    jacketColor: '#1D63B8',
+    accentColor: '#F4B41A',
+    headgear: 'cap',
     x: 1125,
     y: 1580,
     vx: 0,
@@ -35,7 +48,7 @@ class KiliStreetsClientApp {
     radius: 13,
     health: 100,
     stamina: 100,
-    reputation: 15,
+    reputation: 50,
     moneyTZS: 5000,
     inVehicleId: null,
     walkCycle: 0,
@@ -47,7 +60,7 @@ class KiliStreetsClientApp {
   private trees = [] as ReturnType<ClientSqliteDB['selectAllTrees']>;
   private vehicles = [] as ReturnType<ClientSqliteDB['selectAllVehicles']>;
   private missions = [] as ReturnType<ClientSqliteDB['selectAllMissions']>;
-  private npcs = [] as ReturnType<ClientSqliteDB['selectAllNpcs']>;
+  private characters = [] as UserCharacterRow[];
   private dustParticles: DustParticle[] = [];
 
   private currentMissionIndex = 0;
@@ -71,6 +84,7 @@ class KiliStreetsClientApp {
   private elToast = document.getElementById('toast-banner');
   private elSqliteDot = document.getElementById('sqlite-status-dot');
   private elSqliteLabel = document.getElementById('sqlite-status-label');
+  private elRealUserCount = document.getElementById('real-user-count');
 
   constructor() {
     this.clientDb = new ClientSqliteDB();
@@ -84,7 +98,7 @@ class KiliStreetsClientApp {
     this.controls = new ControlsManager();
     this.sfx = new SoundEffects();
 
-    this.bindModals();
+    this.bindModalsAndCharacterStudio();
     this.refreshMissionBanner();
     this.initBackendSync();
 
@@ -98,23 +112,161 @@ class KiliStreetsClientApp {
     this.trees = this.clientDb.selectAllTrees();
     this.vehicles = this.clientDb.selectAllVehicles();
     this.missions = this.clientDb.selectAllMissions();
-    this.npcs = this.clientDb.selectAllNpcs();
+    this.characters = this.clientDb.selectAllUserCharacters();
+    if (this.elRealUserCount) {
+      this.elRealUserCount.textContent = String(this.characters.length);
+    }
   }
 
   private async initBackendSync(): Promise<void> {
     const online = await this.syncConnector.bootstrapFromBackend(this.player);
     if (online) {
       this.reloadEntitiesFromClientSqlite();
-      this.showToast('SQLite WAL: IMEUNGANISHWA NA BACKEND!');
+      this.showToast('SQLite WAL: CONNECTED TO BACKEND & REAL USER ROSTER!');
     } else {
-      this.showToast('MODI YA OFFLINE: CLIENT SQLite ENGINE ACTIVE');
+      this.showToast('OFFLINE MODE: CLIENT SQLite ENGINE ACTIVE');
     }
     this.updateSqliteIndicator();
   }
 
-  private bindModals(): void {
+  private bindModalsAndCharacterStudio(): void {
+    const modalCharacter = document.getElementById('modal-character');
     const modalSqlite = document.getElementById('modal-sqlite');
     const modalShop = document.getElementById('modal-shop');
+
+    const inputUsername = document.getElementById(
+      'char-username'
+    ) as HTMLInputElement | null;
+    const inputDisplayName = document.getElementById(
+      'char-displayname'
+    ) as HTMLInputElement | null;
+    const selectRole = document.getElementById(
+      'char-role'
+    ) as HTMLSelectElement | null;
+    const selectHeadgear = document.getElementById(
+      'char-headgear'
+    ) as HTMLSelectElement | null;
+    const selectSkinTone = document.getElementById(
+      'char-skintone'
+    ) as HTMLSelectElement | null;
+    const selectJacket = document.getElementById(
+      'char-jacket'
+    ) as HTMLSelectElement | null;
+
+    const updatePreviewCanvas = () => {
+      const previewCanvas = document.getElementById(
+        'character-preview-canvas'
+      ) as HTMLCanvasElement | null;
+      if (!previewCanvas) return;
+      const pctx = previewCanvas.getContext('2d');
+      if (!pctx) return;
+
+      const [jacketColor, accentColor] = (
+        selectJacket?.value || '#1D63B8|#F4B41A'
+      ).split('|');
+      const skinTone = selectSkinTone?.value || '#4A2C18';
+      const headgear = (selectHeadgear?.value || 'cap') as HeadgearStyle;
+
+      pctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      pctx.save();
+      pctx.translate(55, 58);
+      pctx.scale(2.3, 2.3);
+      this.renderer.drawCharacterSpriteBody(
+        pctx,
+        -Math.PI / 4,
+        0.5,
+        skinTone,
+        jacketColor,
+        accentColor,
+        headgear,
+        true
+      );
+      pctx.restore();
+    };
+
+    [selectRole, selectHeadgear, selectSkinTone, selectJacket].forEach((el) =>
+      el?.addEventListener('change', updatePreviewCanvas)
+    );
+
+    document
+      .getElementById('btn-open-character')
+      ?.addEventListener('click', () => {
+        updatePreviewCanvas();
+        this.renderRealUsersRoster();
+        modalCharacter?.classList.add('open');
+      });
+
+    document
+      .getElementById('btn-close-character')
+      ?.addEventListener('click', () => {
+        modalCharacter?.classList.remove('open');
+      });
+
+    document
+      .getElementById('btn-randomize-char')
+      ?.addEventListener('click', () => {
+        const sampleNames = [
+          ['eliud_dev', 'Eliud Mushi', 'Software Engineer'],
+          ['fadhili_boda', 'Fadhili Tarimo', 'Bodaboda Rider'],
+          ['amina_medic', 'Dr. AminaSwai', 'KCMC Medic'],
+          ['kelvin_tvs', 'Kelvin Minja', 'Bajaji Captain'],
+          ['esther_kili', 'Esther Urio', 'University Student'],
+          ['david_trader', 'David Chuwa', 'Kilimanjaro Trader'],
+        ];
+        const pick =
+          sampleNames[Math.floor(Math.random() * sampleNames.length)];
+        if (inputUsername) {
+          inputUsername.value = `${pick[0]}_${Math.floor(10 + Math.random() * 89)}`;
+        }
+        if (inputDisplayName) inputDisplayName.value = pick[1];
+        if (selectRole) selectRole.value = pick[2];
+
+        const randomSelect = (sel: HTMLSelectElement | null) => {
+          if (!sel) return;
+          sel.selectedIndex = Math.floor(Math.random() * sel.options.length);
+        };
+        randomSelect(selectHeadgear);
+        randomSelect(selectSkinTone);
+        randomSelect(selectJacket);
+        updatePreviewCanvas();
+      });
+
+    document
+      .getElementById('btn-save-character')
+      ?.addEventListener('click', async () => {
+        const username = inputUsername?.value.trim() || 'kili_user';
+        const displayName = inputDisplayName?.value.trim() || username;
+        const role = (selectRole?.value ||
+          'Software Engineer') as CharacterRole;
+        const headgear = (selectHeadgear?.value || 'cap') as HeadgearStyle;
+        const skinTone = selectSkinTone?.value || '#4A2C18';
+        const [jacketColor, accentColor] = (
+          selectJacket?.value || '#1D63B8|#F4B41A'
+        ).split('|');
+
+        const created = await this.syncConnector.generateCharacter(
+          {
+            username,
+            displayName,
+            role,
+            skinTone,
+            jacketColor,
+            accentColor,
+            headgear,
+          },
+          this.player
+        );
+
+        this.switchActiveUserCharacter(created);
+        this.reloadEntitiesFromClientSqlite();
+        this.renderRealUsersRoster();
+        this.updateSqliteIndicator();
+        this.sfx.playChime('reward');
+        modalCharacter?.classList.remove('open');
+        this.showToast(
+          `SPAWNED REAL USER: @${created.username.toUpperCase()} (${created.role.toUpperCase()})`
+        );
+      });
 
     document.getElementById('btn-open-sqlite')?.addEventListener('click', () => {
       this.renderSqliteInspector();
@@ -125,6 +277,7 @@ class KiliStreetsClientApp {
     });
     document.getElementById('btn-force-sync')?.addEventListener('click', async () => {
       const count = await this.syncConnector.flushSyncQueue(this.player);
+      this.reloadEntitiesFromClientSqlite();
       this.renderSqliteInspector();
       this.updateSqliteIndicator();
       this.showToast(`SQLite SYNCED: ${count} EVENTS PUSHED`);
@@ -144,7 +297,7 @@ class KiliStreetsClientApp {
         const cost = Number(el.getAttribute('data-cost') || 0);
 
         if (this.player.moneyTZS < cost) {
-          this.showToast('SALIO LA TZS HALITOSHI!');
+          this.showToast('INSUFFICIENT TZS BALANCE!');
           return;
         }
 
@@ -155,13 +308,13 @@ class KiliStreetsClientApp {
         if (item === 'ndizi') {
           this.player.stamina = 100;
           this.player.health = 100;
-          this.showToast('UMEKULA NDIZI NYAMA KWA MAMA NTILIE (+NGUVU 100%)');
+          this.showToast('ATE BEEF BANANA STEW AT MAMA NTILIE (+100% STAMINA)');
         } else if (item === 'fuel') {
           for (const v of this.vehicles) v.fuel_level = 100;
-          this.showToast('TANGI LA MAFUTA LIMEJAZWA 100%!');
+          this.showToast('VEHICLE FUEL TANK REFILLED TO 100%!');
         } else {
           this.player.reputation += 15;
-          this.showToast('UMENUNUA VOCHA DUKA LA MANGI (+15 HESHIMA)');
+          this.showToast('PURCHASED VOUCHER AT MANGI STORE (+15 REPUTATION)');
         }
 
         this.clientDb.enqueueSyncEvent('shop_purchase', {
@@ -169,6 +322,61 @@ class KiliStreetsClientApp {
           costTzs: cost,
         });
         modalShop?.classList.remove('open');
+      });
+    });
+  }
+
+  private switchActiveUserCharacter(ch: UserCharacterRow): void {
+    this.player.id = ch.player_id;
+    this.player.username = ch.username;
+    this.player.displayName = ch.display_name;
+    this.player.role = ch.role;
+    this.player.skinTone = ch.skin_tone;
+    this.player.jacketColor = ch.jacket_color;
+    this.player.accentColor = ch.accent_color;
+    this.player.headgear = ch.headgear;
+    this.player.x = ch.x;
+    this.player.y = ch.y;
+    this.player.inVehicleId = null;
+  }
+
+  private renderRealUsersRoster(): void {
+    const container = document.getElementById('real-users-roster');
+    if (!container) return;
+
+    this.characters = this.clientDb.selectAllUserCharacters();
+    container.innerHTML = this.characters
+      .map(
+        (ch) => `
+        <div class="roster-card ${
+          ch.username === this.player.username ? 'active' : ''
+        }" data-switch-user="${ch.username}">
+          <div>
+            <div style="font-weight:800; font-size:0.78rem; color:#F4F7F5;">
+              ● @${ch.username}
+            </div>
+            <div style="font-size:0.7rem; color:#9BB0A3;">
+              ${ch.display_name} • ${ch.role}
+            </div>
+          </div>
+          <span style="font-family:var(--font-mono); font-size:0.68rem; color:#F4B41A;">
+            ${ch.username === this.player.username ? 'ACTIVE' : 'PLAY'}
+          </span>
+        </div>`
+      )
+      .join('');
+
+    container.querySelectorAll('[data-switch-user]').forEach((card) => {
+      card.addEventListener('click', () => {
+        const uname = (card as HTMLElement).getAttribute('data-switch-user');
+        const found = this.characters.find((c) => c.username === uname);
+        if (found) {
+          this.switchActiveUserCharacter(found);
+          this.renderRealUsersRoster();
+          this.showToast(
+            `NOW PLAYING AS REAL USER: @${found.username.toUpperCase()} (${found.role})`
+          );
+        }
       });
     });
   }
@@ -208,6 +416,9 @@ class KiliStreetsClientApp {
         ? `SQLite SYNCED (${stats.pendingSyncEvents})`
         : `SQLite LOCAL (${stats.pendingSyncEvents})`;
     }
+    if (this.elRealUserCount) {
+      this.elRealUserCount.textContent = String(this.characters.length);
+    }
   }
 
   private showToast(msg: string): void {
@@ -227,9 +438,9 @@ class KiliStreetsClientApp {
     }
     if (this.elMissionDesc) {
       if (this.activeMissionState.stage === 'pickup') {
-        this.elMissionDesc.textContent = `Nenda: ${m.pickup_label} — ${m.description}`;
+        this.elMissionDesc.textContent = `Go to: ${m.pickup_label} — ${m.description}`;
       } else {
-        this.elMissionDesc.textContent = `Peleka sasa: ${m.dropoff_label}!`;
+        this.elMissionDesc.textContent = `Deliver now to: ${m.dropoff_label}!`;
       }
     }
   }
@@ -246,7 +457,7 @@ class KiliStreetsClientApp {
       if (res.action === 'entered' && res.vehicle) {
         this.sfx.playChime('enter');
         this.showToast(
-          `UMEINGIA: ${res.vehicle.display_name.toUpperCase()} (${res.vehicle.plate_number})`
+          `ENTERED: ${res.vehicle.display_name.toUpperCase()} (${res.vehicle.plate_number})`
         );
         this.clientDb.enqueueSyncEvent('player_move', {
           x: this.player.x,
@@ -255,7 +466,7 @@ class KiliStreetsClientApp {
           inVehicleId: res.vehicle.id,
         });
       } else if (res.action === 'exited') {
-        this.showToast('UMESHUKA KWENYE GARI');
+        this.showToast('EXITED VEHICLE');
         this.clientDb.enqueueSyncEvent('player_move', {
           x: this.player.x,
           y: this.player.y,
@@ -274,7 +485,7 @@ class KiliStreetsClientApp {
       );
       this.refreshMissionBanner();
       this.showToast(
-        `MISHENI MPYA: ${this.activeMissionState.mission.title}`
+        `NEW MISSION: ${this.activeMissionState.mission.title}`
       );
     }
 
@@ -304,7 +515,12 @@ class KiliStreetsClientApp {
     }
 
     updateAIVehicles(this.vehicles, this.player.x, this.player.y, dt);
-    updateNpcs(this.npcs, dt);
+    updateRealUserCharacters(
+      this.characters,
+      this.player.username,
+      this.player,
+      dt
+    );
     this.updateDust(dt);
 
     const missionTick = tickActiveMission(
@@ -316,7 +532,7 @@ class KiliStreetsClientApp {
       this.sfx.playChime('pickup');
       this.refreshMissionBanner();
       this.showToast(
-        `ABIRIA/MZIGO UMECHUKULIWA! PELEKA: ${this.activeMissionState.mission.dropoff_label.toUpperCase()}`
+        `PASSENGER/CARGO PICKED UP! DELIVER TO: ${this.activeMissionState.mission.dropoff_label.toUpperCase()}`
       );
     } else if (missionTick.status === 'completed') {
       const completedMission = this.activeMissionState.mission;
@@ -327,7 +543,7 @@ class KiliStreetsClientApp {
         rewardTzs: completedMission.reward_tzs,
       });
       this.showToast(
-        `HONGERA! MALIPO +TZS ${completedMission.reward_tzs.toLocaleString()}`
+        `MISSION COMPLETE! EARNED +TZS ${completedMission.reward_tzs.toLocaleString()}`
       );
       this.currentMissionIndex =
         (this.currentMissionIndex + 1) % this.missions.length;
@@ -338,10 +554,9 @@ class KiliStreetsClientApp {
       this.refreshMissionBanner();
     } else if (missionTick.status === 'expired') {
       this.refreshMissionBanner();
-      this.showToast('MUDA UMEISHA! RUDI KUCHUKUA TENA.');
+      this.showToast('TIME EXPIRED! RETURN TO PICKUP POINT.');
     }
 
-    // Periodic Client SQLite -> Backend SQLite WAL sync flush every 4 seconds
     this.syncTimerSec += dt;
     if (this.syncTimerSec >= 4.0) {
       this.syncTimerSec = 0;
@@ -363,7 +578,7 @@ class KiliStreetsClientApp {
     this.renderer.render(
       this.player,
       this.vehicles,
-      this.npcs,
+      this.characters,
       this.roads,
       this.buildings,
       this.trees,
@@ -398,7 +613,10 @@ class KiliStreetsClientApp {
     let closestZone = this.zones[2] || this.zones[0];
     let bestDist = Infinity;
     for (const z of this.zones) {
-      const d = Math.hypot(this.player.x - z.center_x, this.player.y - z.center_y);
+      const d = Math.hypot(
+        this.player.x - z.center_x,
+        this.player.y - z.center_y
+      );
       if (d < bestDist) {
         bestDist = d;
         closestZone = z;
@@ -419,7 +637,7 @@ class KiliStreetsClientApp {
         const kmh = Math.round(Math.abs(drivenVehicle.speed) * 0.24);
         this.elSpeed.textContent = `${drivenVehicle.display_name.toUpperCase()} • ${kmh} km/h`;
       } else {
-        this.elSpeed.textContent = `KWA MIGUU • HESHIMA: ${this.player.reputation}`;
+        this.elSpeed.textContent = `ON FOOT • @${this.player.username} (${this.player.role})`;
       }
     }
 
@@ -432,7 +650,7 @@ class KiliStreetsClientApp {
     }
 
     if (this.elMissionDist) {
-      this.elMissionDist.textContent = `UMBALI: ${distanceMeters}m`;
+      this.elMissionDist.textContent = `DISTANCE: ${distanceMeters}m`;
     }
 
     if (this.elMissionTimer) {
@@ -448,13 +666,13 @@ class KiliStreetsClientApp {
     if (this.elBtnHijack) {
       if (drivenVehicle) {
         this.elBtnHijack.classList.remove('hidden');
-        this.elBtnHijack.textContent = 'SHUKA (E)';
+        this.elBtnHijack.textContent = 'EXIT (E)';
       } else if (nearestVehicle) {
         this.elBtnHijack.classList.remove('hidden');
-        this.elBtnHijack.textContent = `INGIA ${nearestVehicle.kind.toUpperCase()} (E)`;
+        this.elBtnHijack.textContent = `ENTER ${nearestVehicle.kind.toUpperCase()} (E)`;
       } else {
         this.elBtnHijack.classList.add('hidden');
-        this.elBtnHijack.textContent = 'INGIA (E)';
+        this.elBtnHijack.textContent = 'ENTER (E)';
       }
     }
   }
