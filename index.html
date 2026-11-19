@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F1912" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>Kili Streets 2.5D — Ushirika wa Neema & KCMC (Client SQLite)</title>
+  <style>
+    :root {
+      --bg-obsidian: #0C140F;
+      --panel-glass: rgba(14, 23, 18, 0.88);
+      --panel-border: rgba(244, 180, 26, 0.35);
+      --gold-bajaji: #F4B41A;
+      --green-mpesa: #2ECC71;
+      --red-boda: #E03131;
+      --blue-kcmc: #3B82F6;
+      --text-bright: #F4F7F5;
+      --text-subtle: #9BB0A3;
+      --font-sans: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-obsidian);
+      color: var(--text-bright);
+      font-family: var(--font-sans);
+      touch-action: none;
+    }
+
+    #app-root {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    canvas#world-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Top Tactical Navigation & Telemetry Bar */
+    .top-bar {
+      position: absolute;
+      top: 12px;
+      left: 158px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      z-index: 15;
+      pointer-events: none;
+    }
+
+    .zone-cluster {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    .zone-badge {
+      background: var(--panel-glass);
+      border: 1.5px solid var(--panel-border);
+      border-left: 4px solid var(--gold-bajaji);
+      border-radius: 10px;
+      padding: 9px 14px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+    }
+
+    .zone-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--green-mpesa);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .zone-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--gold-bajaji);
+      margin-top: 2px;
+      letter-spacing: 0.01em;
+    }
+
+    .zone-sub {
+      font-size: 0.76rem;
+      color: var(--text-subtle);
+      margin-top: 2px;
+    }
+
+    /* Mission Card */
+    .mission-panel {
+      background: rgba(16, 28, 21, 0.92);
+      border: 1.5px solid rgba(46, 204, 113, 0.45);
+      border-left: 4px solid var(--green-mpesa);
+      border-radius: 10px;
+      padding: 10px 14px;
+      max-width: 390px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .mission-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: var(--green-mpesa);
+    }
+
+    .mission-body {
+      font-size: 0.78rem;
+      color: var(--text-bright);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+
+    .mission-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      gap: 8px;
+    }
+
+    .distance-pill {
+      font-family: var(--font-mono);
+      font-size: 0.73rem;
+      color: var(--gold-bajaji);
+      background: rgba(244, 180, 26, 0.14);
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid rgba(244, 180, 26, 0.3);
+    }
+
+    .btn-small {
+      background: var(--gold-bajaji);
+      color: #101712;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.73rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Right Telemetry & Wallet Cluster */
+    .telemetry-cluster {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    .wallet-card {
+      background: var(--panel-glass);
+      border: 1.5px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 9px 14px;
+      text-align: right;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+      min-width: 220px;
+    }
+
+    .wallet-tzs {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--green-mpesa);
+    }
+
+    .speed-readout {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-bright);
+      margin-top: 3px;
+    }
+
+    .bars-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 7px;
+      justify-content: flex-end;
+    }
+
+    .stat-meter {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-subtle);
+    }
+
+    .meter-track {
+      width: 54px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .meter-fill {
+      height: 100%;
+      background: var(--gold-bajaji);
+      width: 100%;
+    }
+
+    .meter-fill.stamina {
+      background: var(--blue-kcmc);
+    }
+
+    .quick-strip {
+      display: flex;
+      gap: 8px;
+    }
+
+    .pill-btn {
+      background: var(--panel-glass);
+      border: 1.5px solid rgba(255, 255, 255, 0.22);
+      color: var(--text-bright);
+      border-radius: 8px;
+      padding: 6px 11px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    }
+
+    .pill-btn.shop {
+      border-color: rgba(46, 204, 113, 0.55);
+      color: var(--green-mpesa);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green-mpesa);
+      display: inline-block;
+    }
+
+    .status-dot.offline {
+      background: var(--gold-bajaji);
+    }
+
+    /* Modals (Client SQLite Inspector & Mangi/Mama Ntilie Shop) */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(6, 11, 8, 0.72);
+      backdrop-filter: blur(5px);
+      z-index: 40;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-card {
+      background: #121E16;
+      border: 2px solid var(--gold-bajaji);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 460px;
+      padding: 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+
+    .modal-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--gold-bajaji);
+    }
+
+    .modal-close {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: var(--text-bright);
+      border-radius: 6px;
+      padding: 3px 9px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .sqlite-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .sqlite-cell {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+    }
+
+    .shop-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .shop-item {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .shop-item-title {
+      font-weight: 700;
+      font-size: 0.86rem;
+      color: var(--text-bright);
+    }
+
+    .shop-item-sub {
+      font-size: 0.73rem;
+      color: var(--text-subtle);
+      margin-top: 2px;
+    }
+
+    /* Toast */
+    .toast-banner {
+      position: absolute;
+      top: 19%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(12, 20, 15, 0.95);
+      border: 2px solid var(--gold-bajaji);
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-weight: 800;
+      font-size: 0.92rem;
+      color: var(--gold-bajaji);
+      z-index: 30;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.22s ease;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.65);
+    }
+
+    .toast-banner.visible {
+      opacity: 1;
+    }
+
+    /* Controls Layer */
+    .controls-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .joystick-zone {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      width: 134px;
+      height: 134px;
+      border-radius: 50%;
+      background: rgba(12, 20, 15, 0.6);
+      border: 2px solid rgba(244, 180, 26, 0.45);
+      pointer-events: auto;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .joystick-knob {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #F4B41A, #B77908);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+    }
+
+    .action-buttons {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    .top-action-row, .pedal-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .ctrl-btn {
+      border: 2px solid rgba(255, 255, 255, 0.28);
+      border-radius: 12px;
+      font-family: var(--font-sans);
+      font-weight: 800;
+      color: var(--text-bright);
+      background: rgba(18, 28, 22, 0.84);
+      backdrop-filter: blur(5px);
+      cursor: pointer;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    }
+
+    .ctrl-btn:active, .ctrl-btn.active {
+      transform: scale(0.94);
+    }
+
+    .btn-hijack {
+      padding: 11px 16px;
+      background: var(--gold-bajaji);
+      color: #101712;
+      border-color: #FFF3BF;
+      font-size: 0.84rem;
+    }
+
+    .btn-hijack.hidden {
+      opacity: 0.35;
+      background: rgba(18, 28, 22, 0.65);
+      color: var(--text-subtle);
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .btn-horn {
+      width: 58px;
+      height: 46px;
+      font-size: 0.75rem;
+      border-color: rgba(244, 180, 26, 0.55);
+    }
+
+    .btn-brake {
+      width: 74px;
+      height: 68px;
+      background: rgba(224, 49, 49, 0.8);
+      border-color: rgba(255, 135, 135, 0.6);
+      font-size: 0.8rem;
+    }
+
+    .btn-gas {
+      width: 86px;
+      height: 86px;
+      background: rgba(46, 204, 113, 0.85);
+      border-color: rgba(163, 247, 191, 0.65);
+      font-size: 0.86rem;
+    }
+
+    .pc-hints {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(12, 20, 15, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-subtle);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 780px) {
+      .pc-hints { display: none; }
+      .top-bar { left: 142px; }
+      .mission-panel { max-width: 245px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app-root">
+    <canvas id="world-canvas"></canvas>
+
+    <div class="top-bar">
+      <div class="zone-cluster">
+        <div class="zone-badge">
+          <div class="zone-eyebrow">▲ MLIMA KILIMANJARO • MOSHI</div>
+          <div class="zone-title" id="hud-zone-name">USHIRIKA WA NEEMA</div>
+          <div class="zone-sub" id="hud-zone-sub">Mashamba ya Migomba & Kahawa • KCMC</div>
+        </div>
+
+        <div class="mission-panel">
+          <div class="mission-top">
+            <span id="mission-title">SAFARI YA KCMC</span>
+            <span id="mission-timer"></span>
+          </div>
+          <div class="mission-body" id="mission-desc">
+            Mchukue abiria Ushirika wa Neema Center umfikishe Geti Kuu la KCMC.
+          </div>
+          <div class="mission-actions">
+            <span class="distance-pill" id="mission-distance">UMBALI: 120m</span>
+            <button class="btn-small" id="btn-mission-next" type="button">Badili Misheni (M)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="telemetry-cluster">
+        <div class="wallet-card">
+          <div class="wallet-tzs" id="hud-tzs">TZS 5,000</div>
+          <div class="speed-readout" id="hud-speed">KWA MIGUU • 0 km/h</div>
+          <div class="bars-row">
+            <div class="stat-meter">
+              <span>MAFUTA</span>
+              <div class="meter-track"><div class="meter-fill" id="fuel-bar"></div></div>
+            </div>
+            <div class="stat-meter">
+              <span>NGUVU</span>
+              <div class="meter-track"><div class="meter-fill stamina" id="stamina-bar"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="quick-strip">
+          <button class="pill-btn shop" id="btn-open-shop" type="button">
+            <span>🛒 DUKA LA MANGI & MAMA NTILIE</span>
+          </button>
+          <button class="pill-btn" id="btn-open-sqlite" type="button">
+            <span class="status-dot" id="sqlite-status-dot"></span>
+            <span id="sqlite-status-label">SQLite WAL</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-banner" id="toast-banner">KARIBU USHIRIKA WA NEEMA & KCMC!</div>
+
+    <!-- Client SQLite Inspector Modal -->
+    <div class="modal-backdrop" id="modal-sqlite">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span class="modal-title">CLIENT SQLite ENGINE & BACKEND SYNC</span>
+          <button class="modal-close" id="btn-close-sqlite" type="button">FUNGA</button>
+        </div>
+        <div class="sqlite-grid" id="sqlite-table-grid"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+          <span id="sqlite-sync-meta" style="font-family:var(--font-mono); font-size:0.74rem; color:var(--text-subtle);">
+            Pending Queue: 0 events
+          </span>
+          <button class="btn-small" id="btn-force-sync" type="button">Sync na Backend Sasa</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Duka la Mangi & Kwa Mama Ntilie Modal -->
+    <div class="modal-backdrop" id="modal-shop">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span class="modal-title">HUDUMA ZA MTAANI (USHIRIKA & KCMC)</span>
+          <button class="modal-close" id="btn-close-shop" type="button">FUNGA</button>
+        </div>
+        <div class="shop-list">
+          <div class="shop-item">
+            <div>
+              <div class="shop-item-title">Ndizi Nyama & Supu ya Moto (Mama Ntilie)</div>
+              <div class="shop-item-sub">Ongeza Nguvu (Stamina 100%) na Afya</div>
+            </div>
+            <button class="btn-small" data-shop-item="ndizi" data-cost="1500" type="button">TZS 1,500</button>
+          </div>
+          <div class="shop-item">
+            <div>
+              <div class="shop-item-title">Mafuta ya Bajaji / Bodaboda (Lita 1)</div>
+              <div class="shop-item-sub">Jaza Tangi la Mafuta 100%</div>
+            </div>
+            <button class="btn-small" data-shop-item="fuel" data-cost="2000" type="button">TZS 2,000</button>
+          </div>
+          <div class="shop-item">
+            <div>
+              <div class="shop-item-title">Vocha & Kifurushi cha Ramani (Duka la Mangi)</div>
+              <div class="shop-item-sub">Ongeza Heshima Mtaani (+15 Reputation)</div>
+            </div>
+            <button class="btn-small" data-shop-item="voucher" data-cost="1000" type="button">TZS 1,000</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-layer">
+      <div class="joystick-zone" id="joystick-zone">
+        <div class="joystick-knob" id="joystick-knob"></div>
+      </div>
+
+      <div class="action-buttons">
+        <div class="top-action-row">
+          <button class="ctrl-btn btn-horn" id="btn-horn" type="button">HONI</button>
+          <button class="ctrl-btn btn-hijack hidden" id="btn-hijack" type="button">INGIA (E)</button>
+        </div>
+        <div class="pedal-row">
+          <button class="ctrl-btn btn-brake" id="btn-brake" type="button">BREKI</button>
+          <button class="ctrl-btn btn-gas" id="btn-gas" type="button">KANYAGA</button>
+        </div>
+      </div>
+
+      <div class="pc-hints">
+        [WASD / Mishale] Tembea & Endesha • [E] Ingia/Shuka Bajaji/Boda • [Space] Breki • [H] Honi • [M] Badili Misheni
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
