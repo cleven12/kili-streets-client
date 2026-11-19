@@ -1,4 +1,8 @@
-import { PlayerState } from '../types/game';
+import {
+  GenerateCharacterInput,
+  PlayerState,
+  UserCharacterRow,
+} from '../types/game';
 import { ClientSqliteDB } from './clientSqlite';
 
 export class BackendSyncConnector {
@@ -19,20 +23,31 @@ export class BackendSyncConnector {
       const snapshot = await bootRes.json();
       this.clientDb.hydrateFromSeed(snapshot);
 
-      const authRes = await fetch(`${this.baseUrl}/players/auth`, {
+      const genRes = await fetch(`${this.baseUrl}/characters/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: player.username }),
+        body: JSON.stringify({
+          username: player.username,
+          displayName: player.displayName,
+          role: player.role,
+          skinTone: player.skinTone,
+          jacketColor: player.jacketColor,
+          accentColor: player.accentColor,
+          headgear: player.headgear,
+        }),
       });
 
-      if (authRes.ok) {
-        const authData = (await authRes.json()) as {
+      if (genRes.ok) {
+        const genData = (await genRes.json()) as {
           player: { id: string; reputation: number };
+          character: UserCharacterRow;
           wallet: { balance_tzs: number };
+          allCharacters: UserCharacterRow[];
         };
-        player.id = authData.player.id;
-        player.reputation = authData.player.reputation;
-        player.moneyTZS = authData.wallet.balance_tzs;
+        player.id = genData.player.id;
+        player.reputation = genData.player.reputation;
+        player.moneyTZS = genData.wallet.balance_tzs;
+        this.clientDb.replaceUserCharacters(genData.allCharacters);
         this.clientDb.setMeta('player_id', player.id);
         this.clientDb.setMeta('balance_tzs', String(player.moneyTZS));
       }
@@ -50,6 +65,44 @@ export class BackendSyncConnector {
     }
   }
 
+  public async generateCharacter(
+    input: GenerateCharacterInput,
+    player: PlayerState
+  ): Promise<UserCharacterRow> {
+    const localChar = this.clientDb.upsertUserCharacter(
+      input,
+      player.x,
+      player.y
+    );
+
+    try {
+      const res = await fetch(`${this.baseUrl}/characters/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as {
+          player: { id: string; reputation: number };
+          character: UserCharacterRow;
+          wallet: { balance_tzs: number };
+          allCharacters: UserCharacterRow[];
+        };
+        player.id = data.player.id;
+        player.moneyTZS = data.wallet.balance_tzs;
+        this.clientDb.replaceUserCharacters(data.allCharacters);
+        this.clientDb.backendOnline = true;
+        return data.character;
+      }
+    } catch {
+      this.clientDb.backendOnline = false;
+      this.clientDb.enqueueSyncEvent('character_update', { ...input });
+    }
+
+    return localChar;
+  }
+
   public async flushSyncQueue(player: PlayerState): Promise<number> {
     const pending = this.clientDb.getPendingSyncEvents();
     if (pending.length === 0) return 0;
@@ -60,7 +113,7 @@ export class BackendSyncConnector {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           playerId: player.id,
-          clientSqliteVersion: 1,
+          clientSqliteVersion: 2,
           events: pending.map((row) => ({
             eventId: row.event_id,
             eventType: row.event_type,
@@ -74,11 +127,15 @@ export class BackendSyncConnector {
       const data = (await res.json()) as {
         syncedCount: number;
         wallet: { balance_tzs: number };
+        characters?: UserCharacterRow[];
       };
 
       this.clientDb.markEventsSynced(pending.map((p) => p.event_id));
       this.clientDb.backendOnline = true;
       player.moneyTZS = data.wallet.balance_tzs;
+      if (data.characters) {
+        this.clientDb.replaceUserCharacters(data.characters);
+      }
       this.clientDb.setMeta('balance_tzs', String(player.moneyTZS));
       return data.syncedCount;
     } catch {
